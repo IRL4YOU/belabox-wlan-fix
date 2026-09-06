@@ -1,0 +1,57 @@
+#!/bin/bash
+# Robust BELABOX source-routing dispatcher helper.
+# NetworkManager may call dispatcher scripts once before DHCP variables are
+# populated. In that case this script must exit cleanly and wait for the later
+# call with complete data.
+
+iface="${1:-}"
+action="${2:-}"
+
+case "$action" in
+  up|dhcp4-change) ;;
+  down|pre-down|vpn-down)
+    if [[ "$iface" =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+      ip route flush table "$iface" >/dev/null 2>&1 || true
+      ip rule del lookup "$iface" >/dev/null 2>&1 || true
+    fi
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+if ! [[ "$iface" =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+  echo "belabox-source-routing: invalid interface name: $iface" >&2
+  exit 0
+fi
+
+if [[ -z "${IP4_ADDRESS_0:-}" || -z "${IP4_ROUTE_0:-}" ]]; then
+  echo "belabox-source-routing: IPv4 DHCP data incomplete for $iface; waiting for later dispatcher event" >&2
+  exit 0
+fi
+
+addr="${IP4_ADDRESS_0%%/*}"
+network="${IP4_ROUTE_0%% *}"
+gateway="${IP4_GATEWAY:-}"
+
+if [[ -z "$addr" || -z "$network" ]]; then
+  echo "belabox-source-routing: unusable IPv4 data for $iface; waiting for later dispatcher event" >&2
+  exit 0
+fi
+
+while ip rule del from "$addr" lookup "$iface" >/dev/null 2>&1; do
+  :
+done
+
+ip route flush table "$iface" >/dev/null 2>&1 || true
+ip route replace "$network" dev "$iface" proto kernel scope link src "$addr" table "$iface"
+
+if [[ -z "$gateway" || "$addr" == "$gateway" ]]; then
+  ip route replace default dev "$iface" table "$iface"
+else
+  ip route replace default via "$gateway" dev "$iface" table "$iface"
+fi
+
+ip rule add from "$addr" lookup "$iface" 2>/dev/null || true
+exit 0
