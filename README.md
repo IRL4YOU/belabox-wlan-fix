@@ -1,4 +1,4 @@
-# BELABOX WLAN-Fix für ROCK 5B Plus
+# ROCK 5B+ WLAN-Fix
 
 **0.1.0-test3 · Experimentelle Vorabversion · Keine Produktivfreigabe**
 
